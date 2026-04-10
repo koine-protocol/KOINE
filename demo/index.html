@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KOINE Protocol — Live Demo</title>
+<style>
+  :root {
+    --bg:        #0a0b0f;
+    --panel-bg:  #111318;
+    --panel-bd:  #1e2130;
+    --text:      #c9d1e0;
+    --text-dim:  #6b7592;
+    --text-faint:#3a4060;
+    --accent:    #4d91ff;
+    --meridian:  #4d91ff;
+    --sable:     #9d6fff;
+
+    --badge-task:    #4d91ff;
+    --badge-cap:     #9d6fff;
+    --badge-result:  #3fd68f;
+    --badge-partial: #f5a623;
+    --badge-handoff: #f5a623;
+    --badge-uncert:  #ff7043;
+
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    overflow: hidden;
+  }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    grid-template-columns: 1fr;
+    height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    min-height: 56px;
+    border-bottom: 1px solid var(--panel-bd);
+    background: var(--panel-bg);
+    z-index: 10;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-word {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #fff;
+  }
+
+  .logo-version {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    border: 1px solid var(--panel-bd);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .header-center {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  /* ── Token Counter ─────────────────────────────────────────── */
+  .token-counter {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .savings-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: #3fd68f;
+    background: rgba(63,214,143,0.08);
+    border: 1px solid rgba(63,214,143,0.25);
+    border-radius: 4px;
+    padding: 4px 10px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .savings-badge:hover {
+    background: rgba(63,214,143,0.15);
+    border-color: rgba(63,214,143,0.45);
+  }
+
+  /* ── Main content ───────────────────────────────────────────── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 240px 1fr;
+    overflow: hidden;
+  }
+
+  /* ── Agent stage (center column) ───────────────────────────── */
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 24px 0;
+    position: relative;
+  }
+
+  .agent-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .agent-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    position: relative;
+  }
+
+  .agent-avatar.meridian {
+    background: rgba(77,145,255,0.12);
+    border: 2px solid rgba(77,145,255,0.4);
+    color: var(--meridian);
+  }
+
+  .agent-avatar.sable {
+    background: rgba(157,111,255,0.12);
+    border: 2px solid rgba(157,111,255,0.4);
+    color: var(--sable);
+  }
+
+  .agent-avatar .pulse-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .agent-avatar.thinking .pulse-ring {
+    border-color: currentColor;
+    opacity: 0.5;
+    animation: pulse-ring 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-ring {
+    0%   { transform: scale(1);    opacity: 0.5; }
+    50%  { transform: scale(1.15); opacity: 0.2; }
+    100% { transform: scale(1);    opacity: 0.5; }
+  }
+
+  .agent-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .agent-name.meridian { color: var(--meridian); }
+  .agent-name.sable    { color: var(--sable); }
+
+  .agent-status {
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: center;
+    max-width: 100px;
+    line-height: 1.3;
+  }
+
+  /* ── SVG connection line ────────────────────────────────────── */
+  .connection-svg {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  #conn-line {
+    stroke: var(--panel-bd);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    fill: none;
+    transition: stroke 0.5s;
+  }
+
+  #conn-pulse {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    opacity: 0;
+  }
+
+  #conn-dot {
+    r: 5;
+    opacity: 0;
+  }
+
+  .in-flight #conn-line   { stroke: rgba(77,145,255,0.25); }
+  .in-flight #conn-pulse  { opacity: 1; }
+  .in-flight #conn-dot    { opacity: 1; }
+
+  /* ── Panels ─────────────────────────────────────────────────── */
+  .panel {
+    border-right: 1px solid var(--panel-bd);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--panel-bg);
+  }
+
+  .panel:last-child {
+    border-right: none;
+    border-left: 1px solid var(--panel-bd);
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--panel-bd);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--text-dim);
+  }
+
+  .panel-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    transition: background 0.3s;
+  }
+
+  .panel-dot.active { background: #3fd68f; animation: blink 1s ease-in-out infinite; }
+
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scroll-behavior: smooth;
+  }
+
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--panel-bd); border-radius: 2px; }
+
+  /* ── KOINE message blocks (left panel) ─────────────────────── */
+  .koine-block {
+    margin-bottom: 20px;
+    border: 1px solid var(--panel-bd);
+    border-radius: 6px;
+    overflow: hidden;
+    animation: slide-in 0.3s ease-out;
+  }
+
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .koine-block-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: rgba(255,255,255,0.025);
+    border-bottom: 1px solid var(--panel-bd);
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .badge-TASK_REQUEST    { background: rgba(77,145,255,0.18); color: var(--badge-task); }
+  .badge-CAPABILITY_DECL { background: rgba(157,111,255,0.18); color: var(--badge-cap); }
+  .badge-RESULT-ok       { background: rgba(63,214,143,0.18); color: var(--badge-result); }
+  .badge-RESULT-partial  { background: rgba(245,166,35,0.18); color: var(--badge-partial); }
+  .badge-RESULT-error    { background: rgba(255,70,67,0.18); color: #ff4643; }
+  .badge-HANDOFF         { background: rgba(245,166,35,0.15); color: var(--badge-handoff); }
+  .badge-UNCERTAINTY     { background: rgba(255,112,67,0.18); color: var(--badge-uncert); }
+  .badge-UNKNOWN         { background: rgba(107,117,146,0.18); color: var(--text-dim); }
+
+  .flow-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    flex: 1;
+  }
+
+  .flow-label .from-agent { font-weight: 600; }
+  .from-meridian { color: var(--meridian); }
+  .from-sable    { color: var(--sable); }
+
+  .koine-pre {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: #9aafc8;
+    padding: 12px 14px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #0d0f16;
+  }
+
+  /* syntax highlight zones */
+  .koine-pre .hl-header   { color: #5ba3f5; font-weight: 600; }
+  .koine-pre .hl-meta-key { color: #9d6fff; }
+  .koine-pre .hl-meta-val { color: #c9d1e0; }
+  .koine-pre .hl-sep      { color: var(--text-faint); }
+  .koine-pre .hl-key      { color: #56b6c2; }
+  .koine-pre .hl-val      { color: #e5c07b; }
+  .koine-pre .hl-delim    { color: #4a5270; font-style: italic; }
+
+  /* ── English cards (right panel) ───────────────────────────── */
+  .english-card {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--panel-bd);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.018);
+    animation: slide-in 0.3s ease-out;
+  }
+
+  .english-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .agent-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .pill-meridian { background: rgba(77,145,255,0.15); color: var(--meridian); }
+  .pill-sable    { background: rgba(157,111,255,0.15); color: var(--sable); }
+
+  .arrow-icon { color: var(--text-faint); font-size: 11px; }
+
+  .english-text {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.65;
+  }
+
+  /* ── Status bar / empty states ─────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 10px;
+    color: var(--text-faint);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .empty-state-icon {
+    font-size: 32px;
+    opacity: 0.3;
+  }
+
+  .start-btn {
+    margin-top: 8px;
+    padding: 10px 28px;
+    background: rgba(77,145,255,0.15);
+    border: 1px solid rgba(77,145,255,0.4);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+
+  .start-btn:hover {
+    background: rgba(77,145,255,0.25);
+    border-color: rgba(77,145,255,0.7);
+  }
+
+  .start-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Thinking indicator ─────────────────────────────────────── */
+  .thinking-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    animation: slide-in 0.2s ease-out;
+    border: 1px solid var(--panel-bd);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    background: rgba(255,255,255,0.01);
+  }
+
+  .dots { display: inline-flex; gap: 3px; }
+  .dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    animation: dot-bounce 1.2s ease-in-out infinite;
+  }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes dot-bounce {
+    0%,80%,100% { transform: translateY(0); }
+    40%          { transform: translateY(-4px); }
+  }
+
+  /* ── Error banner ───────────────────────────────────────────── */
+  .error-banner {
+    padding: 12px 16px;
+    background: rgba(255,70,67,0.1);
+    border: 1px solid rgba(255,70,67,0.3);
+    border-radius: 6px;
+    color: #ff7875;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+
+  /* ── Done banner ────────────────────────────────────────────── */
+  .done-banner {
+    padding: 12px 16px;
+    background: rgba(63,214,143,0.08);
+    border: 1px solid rgba(63,214,143,0.25);
+    border-radius: 6px;
+    color: #3fd68f;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    margin-bottom: 12px;
+    animation: slide-in 0.3s ease-out;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <span class="logo-word">KOINE</span>
+      <span class="logo-version">1.0</span>
+    </div>
+
+    <div class="header-center">
+      Security &amp; Reliability Review — HIPAA Patient Data API<br>
+      <span id="header-status" style="color:var(--text-faint); font-size:11px;">Press Run to start the live agent exchange</span>
+    </div>
+
+    <div class="token-counter">
+      <a class="savings-badge" href="/benchmarks" target="_blank">~40% payload savings — see /benchmarks</a>
+    </div>
+  </header>
+
+  <!-- ── Main ───────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Left: raw KOINE stream -->
+    <div class="panel" id="panel-koine">
+      <div class="panel-header">
+        <div class="panel-dot" id="dot-left"></div>
+        <span class="panel-title">KOINE Wire Format</span>
+      </div>
+      <div class="panel-body" id="koine-body">
+        <div class="empty-state">
+          <div class="empty-state-icon">⬡</div>
+          <div>Raw KOINE protocol messages<br>appear here as they stream in</div>
+          <button class="start-btn" id="start-btn" onclick="startDemo()">Run Demo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: agent stage with SVG connection -->
+    <div class="stage" id="stage">
+      <svg class="connection-svg" id="conn-svg" viewBox="0 0 240 100%" preserveAspectRatio="none">
+        <path id="conn-line" d="M120,0 L120,100%"/>
+        <path id="conn-pulse" d=""/>
+        <circle id="conn-dot" cx="120" cy="50%"/>
+      </svg>
+
+      <div class="agent-card" id="card-meridian">
+        <div class="agent-avatar meridian" id="avatar-meridian">
+          <div class="pulse-ring"></div>
+          M
+        </div>
+        <div class="agent-name meridian">Meridian</div>
+        <div class="agent-status" id="status-meridian">Orchestrator</div>
+      </div>
+
+      <div class="agent-card" id="card-sable">
+        <div class="agent-avatar sable" id="avatar-sable">
+          <div class="pulse-ring"></div>
+          S
+        </div>
+        <div class="agent-name sable">Sable</div>
+        <div class="agent-status" id="status-sable">Security &amp; Reliability</div>
+      </div>
+    </div>
+
+    <!-- Right: English translation -->
+    <div class="panel" id="panel-english">
+      <div class="panel-header">
+        <div class="panel-dot" id="dot-right"></div>
+        <span class="panel-title">Plain English</span>
+      </div>
+      <div class="panel-body" id="english-body">
+        <div class="empty-state">
+          <div class="empty-state-icon">◎</div>
+          <div>Each KOINE message is translated<br>to plain English in real time</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .main -->
+</div><!-- .app -->
+
+<script>
+// ────────────────────────────────────────────────────────────
+// Syntax highlighter for KOINE text
+// ────────────────────────────────────────────────────────────
+function highlightKoine(raw) {
+  const lines = raw.split('\n');
+  const out = [];
+  let inBlock = false;
+  let blockDelim = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const escaped = escHtml(line);
+
+    if (inBlock) {
+      if (line.trim() === blockDelim) {
+        out.push(`<span class="hl-delim">${escaped}</span>`);
+        inBlock = false;
+        blockDelim = null;
+      } else {
+        out.push(`<span class="hl-val">${escaped}</span>`);
+      }
+      continue;
+    }
+
+    if (i === 0 && line.startsWith('KOINE/')) {
+      out.push(`<span class="hl-header">${escaped}</span>`);
+      continue;
+    }
+
+    if (line === '---') {
+      out.push(`<span class="hl-sep">${escaped}</span>`);
+      continue;
+    }
+
+    if (line.startsWith('@')) {
+      const colon = line.indexOf(': ');
+      if (colon > 0) {
+        const key = escHtml(line.slice(0, colon + 1));
+        const val = escHtml(line.slice(colon + 2));
+        out.push(`<span class="hl-meta-key">${key}</span>: <span class="hl-meta-val">${val}</span>`);
+      } else {
+        out.push(`<span class="hl-meta-key">${escaped}</span>`);
+      }
+      continue;
+    }
+
+    // Semantic field
+    const colon = line.indexOf(': ');
+    if (colon > 0 && !line.startsWith(' ')) {
+      const key = escHtml(line.slice(0, colon));
+      const val = line.slice(colon + 2);
+      if (val.startsWith('<<<')) {
+        const delim = val.slice(3).trim();
+        inBlock = true;
+        blockDelim = delim;
+        out.push(`<span class="hl-key">${key}</span>: <span class="hl-delim">${escHtml('<<<' + delim)}</span>`);
+      } else {
+        out.push(`<span class="hl-key">${key}</span>: <span class="hl-val">${escHtml(val)}</span>`);
+      }
+      continue;
+    }
+
+    out.push(escaped);
+  }
+  return out.join('\n');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ────────────────────────────────────────────────────────────
+// Badge helpers
+// ────────────────────────────────────────────────────────────
+function badgeClass(msgType, fields) {
+  if (msgType === 'TASK_REQUEST')    return 'badge-TASK_REQUEST';
+  if (msgType === 'CAPABILITY_DECL') return 'badge-CAPABILITY_DECL';
+  if (msgType === 'HANDOFF')         return 'badge-HANDOFF';
+  if (msgType === 'UNCERTAINTY')     return 'badge-UNCERTAINTY';
+  if (msgType === 'RESULT') {
+    // Try to extract status from koine text
+    return 'badge-RESULT-ok'; // default; overridden below
+  }
+  return 'badge-UNKNOWN';
+}
+
+function badgeLabel(msgType) {
+  const labels = {
+    'TASK_REQUEST':    'TASK REQUEST',
+    'CAPABILITY_DECL': 'CAPABILITY DECL',
+    'RESULT':          'RESULT',
+    'HANDOFF':         'HANDOFF',
+    'UNCERTAINTY':     'UNCERTAINTY',
+  };
+  return labels[msgType] || msgType;
+}
+
+function resolveResultBadgeClass(koineText) {
+  const m = koineText.match(/^status:\s*(\S+)/m);
+  if (!m) return 'badge-RESULT-ok';
+  if (m[1] === 'partial') return 'badge-RESULT-partial';
+  if (m[1] === 'error')   return 'badge-RESULT-error';
+  return 'badge-RESULT-ok';
+}
+
+// ────────────────────────────────────────────────────────────
+// Connection line animation
+// ────────────────────────────────────────────────────────────
+let animFrame = null;
+let animStart = null;
+const ANIM_DUR = 1600; // ms for dot to travel
+
+function getAgentCenterY(agentName) {
+  const card = document.getElementById(`card-${agentName}`);
+  const svg  = document.getElementById('conn-svg');
+  if (!card || !svg) return 0;
+  const svgRect  = svg.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  return cardRect.top + cardRect.height / 2 - svgRect.top;
+}
+
+function animateMessage(fromAgent, toAgent) {
+  const svg    = document.getElementById('conn-svg');
+  const stage  = document.getElementById('stage');
+  const dot    = document.getElementById('conn-dot');
+  const pulse  = document.getElementById('conn-pulse');
+  const line   = document.getElementById('conn-line');
+
+  if (!svg) return;
+
+  const svgH = svg.clientHeight;
+  const cx   = 120;
+
+  const fromY = getAgentCenterY(fromAgent);
+  const toY   = getAgentCenterY(toAgent);
+
+  // Update static line
+  line.setAttribute('d', `M${cx},${fromY} L${cx},${toY}`);
+
+  // Pulse path (same as line)
+  const agentColor = fromAgent === 'meridian' ? '#4d91ff' : '#9d6fff';
+  pulse.setAttribute('d', `M${cx},${fromY} L${cx},${toY}`);
+  pulse.setAttribute('stroke', agentColor);
+
+  dot.setAttribute('fill', agentColor);
+  dot.setAttribute('cx', cx);
+
+  stage.classList.add('in-flight');
+
+  if (animFrame) cancelAnimationFrame(animFrame);
+  animStart = null;
+
+  function step(ts) {
+    if (!animStart) animStart = ts;
+    const t = Math.min((ts - animStart) / ANIM_DUR, 1);
+    // ease-in-out cubic
+    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+    const cy = fromY + (toY - fromY) * ease;
+    dot.setAttribute('cy', cy);
+
+    // Fade pulse stroke-dashoffset for a trailing effect
+    const len = Math.abs(toY - fromY);
+    const trailLen = len * 0.3;
+    const offset = len * (1 - ease);
+    pulse.setAttribute('stroke-dasharray', `${trailLen} ${len}`);
+    pulse.setAttribute('stroke-dashoffset', -offset);
+
+    if (t < 1) {
+      animFrame = requestAnimationFrame(step);
+    } else {
+      // Linger briefly then clear
+      setTimeout(() => {
+        stage.classList.remove('in-flight');
+        animFrame = null;
+      }, 400);
+    }
+  }
+
+  animFrame = requestAnimationFrame(step);
+}
+
+// ────────────────────────────────────────────────────────────
+// Token counter
+// ────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────
+// Thinking indicator management
+// ────────────────────────────────────────────────────────────
+let thinkingEl = null;
+
+function showThinking(agent, koineBody) {
+  removeThinking();
+  const color = agent === 'meridian' ? 'var(--meridian)' : 'var(--sable)';
+  const el = document.createElement('div');
+  el.className = 'thinking-row';
+  el.id = 'thinking-indicator';
+  el.innerHTML = `
+    <span style="color:${color}; font-weight:600; font-size:10px; text-transform:uppercase;">${escHtml(agent)}</span>
+    <span style="color:var(--text-faint);">is composing</span>
+    <span class="dots">
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </span>
+  `;
+  koineBody.appendChild(el);
+  koineBody.scrollTop = koineBody.scrollHeight;
+  thinkingEl = el;
+
+  // Avatar pulse
+  const avatar = document.getElementById(`avatar-${agent}`);
+  if (avatar) avatar.classList.add('thinking');
+}
+
+function removeThinking() {
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+  ['meridian','sable'].forEach(a => {
+    const av = document.getElementById(`avatar-${a}`);
+    if (av) av.classList.remove('thinking');
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Render message into panels
+// ────────────────────────────────────────────────────────────
+function renderMessage(ev) {
+  const koineBody   = document.getElementById('koine-body');
+  const englishBody = document.getElementById('english-body');
+
+  removeThinking();
+
+  // Remove empty states on first message
+  koineBody.querySelectorAll('.empty-state').forEach(e => e.remove());
+  englishBody.querySelectorAll('.empty-state').forEach(e => e.remove());
+
+  // Determine badge
+  let bClass = badgeClass(ev.msg_type);
+  if (ev.msg_type === 'RESULT') bClass = resolveResultBadgeClass(ev.koine);
+  const bLabel = badgeLabel(ev.msg_type);
+
+  // From/to display
+  const fromAgent = (ev.from_agent || '').toLowerCase();
+  const toAgent   = (ev.to_agent || '').toLowerCase();
+  const fromColor = fromAgent === 'meridian' ? 'from-meridian' : 'from-sable';
+
+  // ── KOINE block ──
+  const koineBlock = document.createElement('div');
+  koineBlock.className = 'koine-block';
+  koineBlock.innerHTML = `
+    <div class="koine-block-header">
+      <span class="badge ${escHtml(bClass)}">${escHtml(bLabel)}</span>
+      <span class="flow-label">
+        <span class="from-agent ${escHtml(fromColor)}">${escHtml(fromAgent)}</span>
+        ${toAgent && toAgent !== 'broadcast' ? ` → <span class="from-agent" style="color:var(--text-dim)">${escHtml(toAgent)}</span>` : ' → broadcast'}
+      </span>
+    </div>
+    <pre class="koine-pre">${highlightKoine(ev.koine)}</pre>
+  `;
+  koineBody.appendChild(koineBlock);
+  koineBody.scrollTop = koineBody.scrollHeight;
+
+  // ── English card ──
+  const toDisplayColor = toAgent === 'meridian' ? 'pill-meridian' : toAgent === 'sable' ? 'pill-sable' : '';
+  const englishCard = document.createElement('div');
+  englishCard.className = 'english-card';
+  englishCard.innerHTML = `
+    <div class="english-card-top">
+      <span class="agent-pill ${fromAgent === 'meridian' ? 'pill-meridian' : 'pill-sable'}">${escHtml(fromAgent)}</span>
+      <span class="arrow-icon">→</span>
+      <span class="badge ${escHtml(bClass)}">${escHtml(bLabel)}</span>
+      ${toAgent && toAgent !== 'broadcast'
+        ? `<span class="agent-pill ${escHtml(toDisplayColor)}">${escHtml(toAgent)}</span>`
+        : `<span style="font-size:10px; color:var(--text-faint); font-family:var(--font-mono);">broadcast</span>`}
+    </div>
+    <div class="english-text">${escHtml(ev.english)}</div>
+  `;
+  englishBody.appendChild(englishCard);
+  englishBody.scrollTop = englishBody.scrollHeight;
+
+  // ── Animate connection ──
+  if (toAgent && toAgent !== 'broadcast' && (toAgent === 'meridian' || toAgent === 'sable')) {
+    animateMessage(fromAgent, toAgent);
+  }
+
+
+  // ── Update agent status ──
+  const statusEl = document.getElementById(`status-${fromAgent}`);
+  if (statusEl) {
+    const statusMap = {
+      'TASK_REQUEST':    'Routing task…',
+      'CAPABILITY_DECL': 'Announcing…',
+      'RESULT':          'Reporting results',
+      'HANDOFF':         'Handing off…',
+      'UNCERTAINTY':     'Requesting info…',
+    };
+    statusEl.textContent = statusMap[ev.msg_type] || ev.msg_type;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Main demo runner — SSE connection
+// ────────────────────────────────────────────────────────────
+function startDemo() {
+  const btn = document.getElementById('start-btn');
+  if (btn) btn.disabled = true;
+
+  // Activate panel dots
+  document.getElementById('dot-left').classList.add('active');
+  document.getElementById('dot-right').classList.add('active');
+
+  document.getElementById('header-status').textContent = 'Live — agents exchanging messages…';
+
+  const es = new EventSource('/api/stream');
+
+  es.onmessage = function(event) {
+    let data;
+    try { data = JSON.parse(event.data); } catch(e) { return; }
+
+    const koineBody = document.getElementById('koine-body');
+    const englishBody = document.getElementById('english-body');
+
+    if (data.type === 'thinking') {
+      showThinking(data.agent, koineBody);
+      const toAgent = data.agent === 'meridian' ? 'sable' : 'meridian';
+      const statusEl = document.getElementById(`status-${data.agent}`);
+      if (statusEl) statusEl.textContent = 'Composing…';
+
+    } else if (data.type === 'message') {
+      renderMessage(data);
+
+    } else if (data.type === 'done') {
+      removeThinking();
+      document.getElementById('dot-left').classList.remove('active');
+      document.getElementById('dot-right').classList.remove('active');
+      document.getElementById('header-status').textContent = 'Session complete';
+
+      ['meridian','sable'].forEach(a => {
+        const s = document.getElementById(`status-${a}`);
+        if (s) s.textContent = 'Done';
+      });
+
+      const banner = document.createElement('div');
+      banner.className = 'done-banner';
+      banner.textContent = `✓ Session complete`;
+      koineBody.appendChild(banner);
+      koineBody.scrollTop = koineBody.scrollHeight;
+
+      // Restart button
+      const rb = document.createElement('button');
+      rb.className = 'start-btn';
+      rb.textContent = 'Run Again';
+      rb.style.display = 'block';
+      rb.style.margin = '8px auto';
+      rb.onclick = () => { window.location.reload(); };
+      englishBody.appendChild(rb);
+      englishBody.scrollTop = englishBody.scrollHeight;
+
+      es.close();
+
+    } else if (data.type === 'error') {
+      removeThinking();
+      document.getElementById('dot-left').classList.remove('active');
+      document.getElementById('dot-right').classList.remove('active');
+      document.getElementById('header-status').textContent = 'Error';
+
+      const banner = document.createElement('div');
+      banner.className = 'error-banner';
+      banner.textContent = `Error: ${data.message}`;
+      document.getElementById('koine-body').appendChild(banner);
+      document.getElementById('koine-body').scrollTop = 999999;
+
+      es.close();
+    }
+  };
+
+  es.onerror = function(e) {
+    removeThinking();
+    document.getElementById('header-status').textContent = 'Connection lost';
+    document.getElementById('dot-left').classList.remove('active');
+    document.getElementById('dot-right').classList.remove('active');
+    es.close();
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// Resize: keep connection line updated when window resizes
+// ────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  // Line redraws dynamically on next animation frame; nothing to do here
+});
+</script>
+</body>
+</html>

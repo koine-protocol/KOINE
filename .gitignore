@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment / secrets
+.env
+.env.local
+.env.*
+*api_key*
+*secret*
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# Intermediate benchmark runs (canonical named files only)
+benchmarks/results/benchmark_*.md

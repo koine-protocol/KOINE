@@ -1,0 +1,717 @@
+# KOINE Protocol — LLM Reference
+# Version: 1.0
+# This file teaches any LLM how to read and write valid KOINE messages
+# from scratch. No prior knowledge is assumed. A model that reads only
+# this file should be able to produce messages that pass the reference
+# implementation's validator.
+
+
+## WHAT IS KOINE
+
+KOINE is a compact, structured message format for agent-to-agent
+communication. It replaces verbose JSON and natural language in agent
+pipelines. Every KOINE message is machine-parseable, deterministically
+renderable to English, and significantly smaller than equivalent JSON.
+
+KOINE sits above transport (HTTP, WebSocket, MCP, A2A) and below
+application logic. Think of it as HTTP for agent communication: a
+well-defined envelope that any agent can read, route, and validate.
+
+
+## MESSAGE ANATOMY
+
+Every KOINE message has exactly three sections, in order:
+
+  1. HEADER LINE   — identifies protocol version and message type
+  2. META FIELDS   — routing, identity, and timing (prefixed with @)
+  3. SEPARATOR     — the literal line: ---
+  4. SEMANTIC FIELDS — the payload for this message type
+
+Blank lines between meta fields are allowed and ignored.
+Line endings MUST be LF (\n). The file MUST be UTF-8 encoded.
+
+Template:
+
+  KOINE/<major>.<minor> <MSG_TYPE>
+  @id: <value>
+  @from: <value>
+  @to: <value>
+  @ts: <value>
+  [more meta fields...]
+  ---
+  field_name: value
+  another_field: value
+  [more semantic fields...]
+
+
+## PRIMITIVE TYPES
+
+Every field has a type. These are the primitive types used throughout:
+
+TYPE      FORMAT RULE                                     EXAMPLE
+----      -----------                                     -------
+str       UTF-8 text, no unescaped newlines               hello world
+id        Alphanumeric + hyphens only, 1–128 chars        agent-7f3a
+int       Signed decimal integer                          42
+float     Decimal number, may include fractional part     0.93
+bool      Exactly the word true or false                  true
+list      Items separated by commas, no spaces around ,   summarize,translate
+kv        Comma-separated key=value pairs, no spaces      max_tokens=80,style=exec
+semver    Semantic version: MAJOR.MINOR.PATCH             2.1.0
+ts        Unix timestamp, integer seconds since epoch     1712534400
+prob      Float in range [0.0, 1.0] inclusive             0.87
+block     Multi-line value (see BLOCK VALUES section)
+
+IMPORTANT TYPE RULES:
+- bool: only the lowercase words true and false are valid. Not True, not 1, not yes.
+- prob: must be a decimal number between 0.0 and 1.0. 0.0 means no confidence,
+  1.0 means certain. Values outside [0.0, 1.0] are invalid.
+- kv: no spaces around = or ,. Correct: max_tokens=80,style=exec
+  Wrong: max_tokens = 80, style = exec
+- list: no spaces around ,. Correct: summarize,translate
+  Wrong: summarize, translate
+- id: only letters (a-z, A-Z), digits (0-9), and hyphens (-). No underscores,
+  no spaces, no other punctuation.
+- ts: must be an integer (whole number seconds). Do not use milliseconds or
+  ISO 8601 strings.
+
+
+## BLOCK VALUES
+
+A block value holds multi-line content. Use it when the value contains
+newlines. Syntax:
+
+  field_name: <<<DELIM
+  line one
+  line two
+  line three
+  DELIM
+
+Rules:
+- DELIM must be 1–32 uppercase letters and underscores: [A-Z_]+
+- The closing DELIM must appear alone on its own line with no
+  leading or trailing whitespace.
+- Content between the opening and closing delimiter is taken verbatim,
+  including blank lines.
+- The most common delimiter is END. If the content itself contains
+  a line that is exactly END, choose a different delimiter (e.g. ENDBLOCK).
+
+Example with block input:
+
+  input: <<<END
+  The Board of Directors met on March 15th.
+  Revenue was up 12% year-over-year.
+  Costs increased 8% from headcount growth.
+  END
+
+Example with a different delimiter:
+
+  output: <<<RESULT
+  Line one of output.
+
+  Line three (blank line above is preserved).
+  RESULT
+
+
+## HEADER LINE
+
+Format:  KOINE/<major>.<minor> <MSG_TYPE>
+
+- major and minor are integers.
+- Current version is 1.0. Write: KOINE/1.0
+- MSG_TYPE must be one of the six core types (exact spelling required):
+    TASK_REQUEST
+    CAPABILITY_DECL
+    RESULT
+    HANDOFF
+    UNCERTAINTY
+    EXTENSION_PROPOSAL
+  Or an extension type prefixed with EXT/ (e.g. EXT/FEEDBACK).
+- There is exactly one space between the version and the message type.
+- The header line has no trailing characters after MSG_TYPE.
+
+Correct:   KOINE/1.0 TASK_REQUEST
+Wrong:     koine/1.0 TASK_REQUEST   (lowercase)
+Wrong:     KOINE/1.0  TASK_REQUEST  (two spaces)
+Wrong:     KOINE/1.0 task_request   (wrong case)
+
+
+## META FIELDS
+
+Meta fields begin with @ and carry routing, identity, and timing.
+Format:  @key: value
+
+The space after the colon is required. There must be no space before
+the colon.
+
+Correct:   @id: my-message-01
+Wrong:     @id:my-message-01     (missing space)
+Wrong:     @ id: my-message-01   (space before key)
+
+FIELD       TYPE        WHEN REQUIRED      DESCRIPTION
+-----       ----        -------------      -----------
+@id         id          Always             Unique identifier for THIS message.
+                                           Generate a short random string or slug.
+                                           Must be unique — no two messages share an @id.
+@from       id          Always             The agent sending this message.
+@to         id or       Most types         The agent this message is addressed to.
+            "broadcast"                    Use broadcast to address all listeners.
+@ts         ts          Always             Current Unix timestamp (integer seconds).
+@reply-to   id          RESULT,            The @id of the message being replied to.
+                        HANDOFF,           CRITICAL: copy it exactly from the
+                        UNCERTAINTY        request's @id field. Do not generate a
+                                           new value here.
+@ttl        int         Optional           Seconds until message expires.
+@trace      list        Optional           Ordered list of agent IDs that have
+                                           handled this message chain so far.
+@did        did-sig     Optional           W3C DID + detached signature for identity.
+@rep        rep-value   Optional           Reputation score [0.0,1.0] with optional
+                                           issuing authority DID.
+
+Unknown @-prefixed fields must be preserved and forwarded. They must
+NOT cause a parse failure.
+
+GENERATING @id:
+  Use short alphanumeric strings with hyphens. Examples:
+    tr-9f2a1c    (task request)
+    rs-7c4f81    (result)
+    ho-2d5a99    (handoff)
+    un-4e8b12    (uncertainty)
+  Prefixes are convention only — any valid id format is accepted.
+
+GENERATING @ts:
+  Use the current Unix timestamp as a plain integer. In Python:
+    import time; ts = int(time.time())
+  Do not use milliseconds. Do not use ISO 8601 strings.
+
+THE @reply-to RULE (critical):
+  When sending RESULT, HANDOFF, or UNCERTAINTY, @reply-to MUST be set
+  to the exact @id value from the message you are replying to. This is
+  how the receiver knows which request your response addresses. Copy the
+  value verbatim — do not generate a new ID, do not modify it.
+
+  Example: request had @id: tr-9f2a1c
+           your RESULT must have @reply-to: tr-9f2a1c
+
+THE @from / @to SWAP RULE:
+  When replying to a message, swap the @from and @to values:
+    Your RESULT's @from = the request's @to (that's you)
+    Your RESULT's @to   = the request's @from (the original sender)
+
+
+## SEPARATOR
+
+A line containing exactly --- (three hyphens) separates meta fields
+from semantic fields. It is required in every message. There must be
+no leading or trailing whitespace on this line.
+
+Correct:   ---
+Wrong:     ----
+Wrong:      ---   (leading space)
+
+
+## SEMANTIC FIELDS
+
+Semantic fields are lowercase and carry the message payload.
+Format:  field_name: value
+
+Rules:
+- Field keys are lowercase letters, digits, and underscores: [a-z][a-z0-9_]*
+- There is exactly one space after the colon.
+- Values may be any primitive type or a block value.
+- Fields marked [optional] may be omitted entirely.
+- Unknown fields are preserved, not rejected. Forwards-compatibility.
+- Do not add fields that are not in the spec for the message type you
+  are sending — use the extension mechanism instead.
+
+
+## MULTI-MESSAGE STREAMS
+
+When multiple KOINE messages appear in a single file or stream, they
+are separated by the stream boundary sentinel: a line containing
+exactly === (three equals signs).
+
+  KOINE/1.0 TASK_REQUEST
+  @id: tr-001
+  ...
+  ===
+  KOINE/1.0 RESULT
+  @id: rs-001
+  ...
+
+
+## MESSAGE TYPES — COMPLETE REFERENCE
+
+Fields marked * are REQUIRED. Fields marked ° are RECOMMENDED.
+Fields with no marker are optional.
+
+
+### TASK_REQUEST — Request an agent to perform a task
+
+  KOINE/1.0 TASK_REQUEST
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>          *
+  @ts: <ts>          *
+  @reply-to: <id>      (optional; use for follow-up requests in a thread)
+  @ttl: <int>          (optional; seconds until expiry)
+  @trace: <list>       (optional; prior agents in this chain)
+  ---
+  intent: <str>                              *
+  input: <str|block>                         *
+  output_format: <str>
+  constraints: <kv>
+  priority: low|normal|high|critical
+  context_ref: <id>
+  budget: <kv>
+
+FIELD DETAILS:
+  intent        What to do. A verb phrase. Examples: summarize,
+                translate to French, classify sentiment, extract entities.
+                Must not be empty.
+  input         The content to operate on. Must not be empty.
+                Use a block value for multi-line content.
+  output_format Expected structure of the output. Examples: plain,
+                markdown, json, koine.
+  constraints   Operational constraints as key=value pairs.
+                Common keys: max_tokens, lang, style, max_items,
+                min_confidence, audience.
+  priority      Processing urgency. Default is normal if omitted.
+  context_ref   @id of a prior message whose context is relevant.
+  budget        Resource budget hints.
+                Common keys: max_tokens, max_latency_ms, max_cost_usd.
+                All values must be positive numbers.
+
+
+### CAPABILITY_DECL — Declare what this agent can do
+
+  KOINE/1.0 CAPABILITY_DECL
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>|broadcast  (optional; omit to send without a recipient)
+  @ts: <ts>          *
+  ---
+  name: <str>                                *
+  version: <semver>                          *
+  intents: <list>                            * (at least one)
+  input_types: <list>                        *
+  output_types: <list>                       *
+  cost_hint: <int>                           ° (positive integer, tokens)
+  latency_hint: <int>                        ° (positive integer, milliseconds)
+  constraints_accepted: <kv>
+  auth_required: <bool>
+  scope: public|private|trusted
+  max_input_tokens: <int>
+  languages: <list>                            (BCP-47 codes)
+  description: <str|block>
+
+FIELD DETAILS:
+  intents       Comma-separated list of intent verbs this agent handles.
+                Should match values used in TASK_REQUEST intent fields.
+  input_types   MIME types or informal type names accepted as input.
+                Examples: text/plain,text/markdown,application/json
+  output_types  Types this agent can produce.
+  cost_hint     Estimated tokens per average request. Used by orchestrators
+                for routing decisions before committing to a task.
+  latency_hint  Estimated milliseconds per average request.
+  scope         Visibility: public (anyone), private (internal only),
+                trusted (authenticated callers only). Default: public.
+  auth_required Whether callers must provide authentication. Default: false.
+
+
+### RESULT — Return the outcome of a task
+
+  KOINE/1.0 RESULT
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>          *
+  @ts: <ts>          *
+  @reply-to: <id>    * ← MUST be the @id from the TASK_REQUEST
+  @trace: <list>
+  ---
+  status: ok|partial|failed                  *
+  output: <str|block>                        * if status is ok or partial
+  confidence: <prob>
+  tokens_used: <int>
+  latency_ms: <int>
+  error_code: <str>                          * if status is failed
+  error_detail: <str|block>
+  meta: <kv>
+
+STATUS VALUES:
+  ok       Task completed. output MUST be present.
+  partial  Task partially completed. output SHOULD be present.
+           Often followed by a HANDOFF or UNCERTAINTY.
+  failed   Task could not be completed. error_code MUST be present.
+           output should be absent.
+
+STANDARD ERROR CODES (use these for error_code when status is failed):
+  E_INTENT_UNKNOWN        Intent not recognized by this agent.
+  E_INPUT_INVALID         Input is malformed or wrong type.
+  E_INPUT_TOO_LARGE       Input exceeds max_input_tokens.
+  E_BUDGET_EXCEEDED       Request would exceed stated budget.
+  E_AUTH_REQUIRED         Authentication not provided.
+  E_TIMEOUT               Agent timed out.
+  E_INTERNAL              Internal agent error.
+  E_CONSTRAINT_INVALID    Constraint value unrecognized or out of range.
+  E_IDENTITY_UNVERIFIABLE @did present but unresolvable or invalid signature.
+
+CONFIDENCE:
+  A prob value representing how certain the agent is about its output.
+  0.0 = no confidence at all. 1.0 = certain. Typical good output: 0.85–0.97.
+  This is self-assessed — be honest, not optimistic.
+
+
+### HANDOFF — Transfer task responsibility to another agent
+
+  KOINE/1.0 HANDOFF
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>          *
+  @ts: <ts>          *
+  @reply-to: <id>    * ← @id of the TASK_REQUEST or prior HANDOFF
+  @trace: <list>
+  ---
+  reason: <str>                              *
+  target: <id>                               * (must differ from @from)
+  context: <str|block>
+  partial_result: <str|block>
+  trust_chain: <list>
+  priority: low|normal|high|critical
+  instructions: <str|block>
+
+FIELD DETAILS:
+  reason         Why the handoff is occurring. Be specific.
+  target         Agent ID that should receive the task next.
+                 MUST differ from @from — an agent cannot hand off to itself.
+  context        Accumulated context the target agent needs.
+  partial_result Work completed so far. Target should continue from here.
+  trust_chain    Ordered list of agents that have handled this task.
+                 Used for loop detection: if @from appears in trust_chain,
+                 it indicates a routing cycle (warning condition).
+  instructions   Additional instructions for the target agent.
+
+
+### UNCERTAINTY — Signal inability to complete with full confidence
+
+  KOINE/1.0 UNCERTAINTY
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>          *
+  @ts: <ts>          *
+  @reply-to: <id>    * ← @id of the TASK_REQUEST
+  ---
+  kind: <uncertainty-kind>                   *
+  description: <str|block>                   *
+  confidence: <prob>                         *
+  clarification_needed: <str|block>
+  partial_result: <str|block>
+  alternatives: <str|block>
+  can_proceed: <bool>
+
+UNCERTAINTY KINDS (use one of these exactly for the kind field):
+  ambiguous_intent       Intent is too vague to act on reliably.
+  missing_input          Required input is absent or empty.
+  input_ambiguous        Input present but cannot be interpreted unambiguously.
+  out_of_scope           Task is outside this agent's capabilities.
+  low_confidence         Can produce output but confidence is too low.
+  resource_limit         Task would exceed budget or system limits.
+  routing_loop           Agent appears in its own trust_chain.
+  conflicting_constraints Constraints are internally contradictory.
+
+FIELD DETAILS:
+  kind                 Which category of uncertainty. Must be one of the
+                       eight values above, spelled exactly.
+  description          Explain the uncertainty clearly.
+  confidence           Current confidence level. 0.0 = no idea.
+  clarification_needed A specific question that would resolve the uncertainty.
+  alternatives         Possible interpretations or alternate approaches.
+  partial_result       Any output produced before uncertainty was reached.
+  can_proceed          Whether the agent will attempt to proceed anyway.
+                       Default is false if omitted.
+
+
+### EXTENSION_PROPOSAL — Propose a new message type or field
+
+  KOINE/1.0 EXTENSION_PROPOSAL
+  @id: <id>          *
+  @from: <id>        *
+  @to: <id>|broadcast
+  @ts: <ts>          *
+  ---
+  name: <str>                                * (SCREAMING_SNAKE_CASE)
+  kind: message_type|field                   *
+  target_type: <str>                         * if kind is field
+  rationale: <str|block>                     *
+  spec: <block>                              *
+  examples: <block>                          *
+  adoption_threshold: <int>
+  supersedes: <id>
+  incompatible_with: <list>
+
+Extension messages use EXT/<NAME> as the message type in the header.
+Example: KOINE/1.0 EXT/FEEDBACK
+
+
+## COMPLETE WORKED EXAMPLE
+
+This is a complete, valid two-message exchange that passes the
+reference implementation validator. Study the @id and @reply-to
+relationship carefully.
+
+--- REQUEST (sent by orchestrator-1 to summarizer-3) ---
+
+KOINE/1.0 TASK_REQUEST
+@id: tr-9f2a1c
+@from: orchestrator-1
+@to: summarizer-3
+@ts: 1712534400
+@ttl: 60
+---
+intent: summarize
+input: <<<END
+The Board of Directors met on March 15th to discuss Q1 results.
+Revenue was up 12% year-over-year, driven by enterprise subscriptions.
+Operating costs increased 8% due to expanded headcount in engineering.
+The board approved a dividend of $0.42 per share, payable April 30th.
+END
+output_format: plain
+constraints: max_tokens=80,style=executive
+priority: high
+
+--- RESPONSE (sent by summarizer-3 back to orchestrator-1) ---
+
+KOINE/1.0 RESULT
+@id: rs-7c4f81
+@from: summarizer-3
+@to: orchestrator-1
+@ts: 1712534402
+@reply-to: tr-9f2a1c
+---
+status: ok
+output: Q1 revenue rose 12% YoY on enterprise subscriptions; costs up 8% from engineering headcount. Board approved $0.42/share dividend, payable Apr 30.
+confidence: 0.97
+tokens_used: 847
+latency_ms: 612
+
+WHAT TO NOTICE IN THIS EXAMPLE:
+  - The RESULT's @reply-to (tr-9f2a1c) is identical to the
+    TASK_REQUEST's @id (tr-9f2a1c). This is mandatory.
+  - The RESULT's @from (summarizer-3) equals the request's @to.
+  - The RESULT's @to (orchestrator-1) equals the request's @from.
+  - The RESULT has a new, unique @id (rs-7c4f81) different from the request.
+  - status is ok because the task completed successfully.
+  - output is present (required when status is ok).
+  - confidence is a prob value (0.97, within [0.0, 1.0]).
+  - tokens_used and latency_ms are optional but useful for benchmarking.
+  - The block input value uses <<<END...END syntax.
+  - The closing END delimiter appears alone on its own line.
+
+
+## COMPLETE WORKED EXAMPLE — FAILED RESULT
+
+KOINE/1.0 RESULT
+@id: rs-fail-01
+@from: classifier-2
+@to: orchestrator-1
+@ts: 1712534500
+@reply-to: tr-bb3141
+---
+status: failed
+error_code: E_INTENT_UNKNOWN
+error_detail: Intent "obliterate" is not in this agent's capability set. Supported intents: classify,label,tag.
+
+WHAT TO NOTICE:
+  - status is failed, so error_code is required.
+  - output is absent (correct for failed status).
+  - error_detail explains the failure in human-readable terms.
+
+
+## COMPLETE WORKED EXAMPLE — UNCERTAINTY
+
+KOINE/1.0 UNCERTAINTY
+@id: un-4e8b12
+@from: classifier-2
+@to: orchestrator-1
+@ts: 1712534410
+@reply-to: tr-bb3141
+---
+kind: ambiguous_intent
+description: Intent "process document" is too broad. Could mean extract, classify, summarize, or translate.
+confidence: 0.31
+clarification_needed: Which operation is required: extract entities, classify sentiment, summarize content, or translate?
+alternatives: <<<END
+1. extract: pull named entities and key facts
+2. classify: assign sentiment or topic labels
+3. summarize: produce an abstractive summary
+4. translate: convert to target language
+END
+can_proceed: false
+
+WHAT TO NOTICE:
+  - kind is one of the eight defined uncertainty kinds.
+  - confidence is low (0.31) reflecting genuine uncertainty.
+  - clarification_needed is a specific question, not a vague statement.
+  - alternatives uses a block value for multi-line content.
+  - can_proceed: false means the agent will not guess and proceed.
+
+
+## HANDSHAKE PROTOCOL
+
+Before sending TASK_REQUEST messages, agents SHOULD perform a
+capability handshake. The handshake is optional but recommended for
+first-contact interactions.
+
+SYMMETRIC HANDSHAKE:
+  Agent A sends CAPABILITY_DECL to Agent B (or to broadcast)
+  Agent B sends CAPABILITY_DECL to Agent A (or to broadcast)
+  Agent A reads B's declared intents, cost_hint, and latency_hint
+  Agent A sends TASK_REQUEST only if B's intents overlap with the needed task
+
+BROADCAST DISCOVERY:
+  Orchestrator sends CAPABILITY_DECL @to: broadcast
+  All agents respond with their own CAPABILITY_DECL
+  Orchestrator selects the best agent based on:
+    1. intents overlap with the required intent
+    2. input_types accepts the input
+    3. cost_hint within budget.max_tokens
+    4. latency_hint within budget.max_latency_ms
+    5. auth_required: false preferred if authentication is unavailable
+
+CACHING:
+  A received CAPABILITY_DECL may be cached. Treat it as stale when:
+  - A new CAPABILITY_DECL arrives from the same @from with a different version
+  - A RESULT with error_code E_INTENT_UNKNOWN is received from that agent
+
+
+## EXTENSION HANDLING
+
+When you encounter a message with type EXT/<NAME>:
+  - Do NOT reject it or fail with an error.
+  - Preserve all fields exactly as received.
+  - Forward it if you are in a routing chain.
+  - Do not act on it unless you explicitly implement that extension.
+
+When you encounter an unknown field in a known message type:
+  - Preserve it as-is. Do not remove it.
+  - Do not fail validation because of it.
+  - Forwards-compatibility: future versions may add fields you don't know about.
+
+EXTENSION MESSAGE TYPES:
+  Extension message types use EXT/<NAME> in the header.
+  NAME must be SCREAMING_SNAKE_CASE: [A-Z][A-Z0-9_]*
+  Example: KOINE/1.0 EXT/FEEDBACK
+
+EXTENSION FIELDS ON EXISTING TYPES:
+  Extension fields added to existing message types are prefixed with:
+    x_<name>_<field>
+  Example: x_audit_hash, x_audit_signature
+
+
+## GENERATING VALID MESSAGES — CHECKLIST
+
+Before sending any KOINE message, verify:
+
+ALWAYS:
+  [ ] Header line: KOINE/1.0 <TYPE> with exactly one space, correct case
+  [ ] @id is present and contains only [a-zA-Z0-9-]
+  [ ] @from is present and contains only [a-zA-Z0-9-]
+  [ ] @ts is present and is a plain integer (Unix seconds)
+  [ ] The --- separator line is present with no extra whitespace
+  [ ] All required semantic fields for this message type are present
+
+FOR RESULT, HANDOFF, UNCERTAINTY:
+  [ ] @to is present
+  [ ] @reply-to is present and equals the @id of the message being replied to
+  [ ] @from and @to are swapped relative to the incoming message
+
+FOR RESULT:
+  [ ] status is exactly ok, partial, or failed (nothing else)
+  [ ] output is present if status is ok or partial
+  [ ] error_code is present if status is failed
+  [ ] confidence (if included) is a decimal in [0.0, 1.0]
+
+FOR BLOCK VALUES:
+  [ ] The delimiter is all uppercase letters/underscores
+  [ ] The closing delimiter appears alone on its own line
+  [ ] No trailing whitespace on the closing delimiter line
+
+COMMON MISTAKES TO AVOID:
+  ✗  Putting extra text before the KOINE header (no preamble)
+  ✗  Using @reply-to with a value you generated yourself (must copy from request)
+  ✗  Writing confidence: 97 instead of confidence: 0.97
+  ✗  Writing priority: urgent instead of priority: high
+  ✗  Spaces around = in kv fields: max_tokens = 80 is wrong
+  ✗  Spaces around , in list or kv fields: a, b, c is wrong
+  ✗  Using ISO timestamps for @ts: 2024-04-08T12:00:00Z is wrong
+  ✗  Writing status: OK or status: Success instead of status: ok
+  ✗  Forgetting the --- separator between meta and semantic sections
+  ✗  Adding { } or " " around values — KOINE is not JSON
+
+
+## QUICK REFERENCE CARD
+
+SEND A TASK:
+  KOINE/1.0 TASK_REQUEST
+  @id: <unique-id>
+  @from: <your-id>
+  @to: <target-agent-id>
+  @ts: <unix-timestamp>
+  ---
+  intent: <verb>
+  input: <content or <<<END block END>
+  [output_format: plain|markdown|json|koine]
+  [constraints: key=val,key=val]
+  [priority: low|normal|high|critical]
+
+REPLY WITH SUCCESS:
+  KOINE/1.0 RESULT
+  @id: <new-unique-id>
+  @from: <your-id>
+  @to: <original @from value>
+  @ts: <unix-timestamp>
+  @reply-to: <original @id value>    ← copy exactly
+  ---
+  status: ok
+  output: <your output text>
+  [confidence: <0.0-1.0>]
+
+REPLY WITH FAILURE:
+  KOINE/1.0 RESULT
+  @id: <new-unique-id>
+  @from: <your-id>
+  @to: <original @from value>
+  @ts: <unix-timestamp>
+  @reply-to: <original @id value>    ← copy exactly
+  ---
+  status: failed
+  error_code: E_INTENT_UNKNOWN
+  [error_detail: <explanation>]
+
+SIGNAL UNCERTAINTY:
+  KOINE/1.0 UNCERTAINTY
+  @id: <new-unique-id>
+  @from: <your-id>
+  @to: <original @from value>
+  @ts: <unix-timestamp>
+  @reply-to: <original @id value>    ← copy exactly
+  ---
+  kind: <one of the eight kinds>
+  description: <what you are uncertain about>
+  confidence: <0.0-1.0>
+  [clarification_needed: <specific question>]
+
+ANNOUNCE CAPABILITIES:
+  KOINE/1.0 CAPABILITY_DECL
+  @id: <unique-id>
+  @from: <your-id>
+  @to: broadcast
+  @ts: <unix-timestamp>
+  ---
+  name: <your agent name>
+  version: <semver>
+  intents: <comma-separated verbs>
+  input_types: <comma-separated types>
+  output_types: <comma-separated types>
+  [cost_hint: <tokens>]
+  [latency_hint: <milliseconds>]
