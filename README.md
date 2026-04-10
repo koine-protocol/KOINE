@@ -11,7 +11,7 @@ Dense, evolvable, transformer-native messages that ride on top of MCP/A2A.
 
 [Spec](/spec/KOINE.md) | [Live Demo](/demo) | [Benchmark](/benchmarks/results/koine_v1_benchmark.md)
 
-https://github.com/koine-protocol/koine/raw/main/demo/koine_demo.mp4
+https://github.com/koine-protocol/KOINE/raw/main/demo/koine_demo.mp4
 
 <!-- STAR-HISTORY-CHART: insert SVG after launch -->
 
@@ -21,7 +21,7 @@ https://github.com/koine-protocol/koine/raw/main/demo/koine_demo.mp4
 
 ```bash
 # 1. Clone
-git clone https://github.com/koine-protocol/koine.git && cd koine
+git clone https://github.com/koine-protocol/KOINE.git && cd KOINE
 
 # 2. Install the reference implementation
 pip install -e .
@@ -137,5 +137,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 Licensed under [Apache 2.0](LICENSE). Build on it, fork it, ship products with it.
 
-- Spec issues and proposals: [GitHub Issues](https://github.com/koine-protocol/koine/issues)
-- Discussions: [GitHub Discussions](https://github.com/koine-protocol/koine/discussions)
+- Spec issues and proposals: [GitHub Issues](https://github.com/koine-protocol/KOINE/issues)
+- Discussions: [GitHub Discussions](https://github.com/koine-protocol/KOINE/discussions)
